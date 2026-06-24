@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTS Konum Eşleştirme & Buluşma Analizi</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#060a16; --panel:rgba(18,28,54,.55); --panel2:rgba(20,30,58,.7); --border:rgba(120,150,220,.16);
+    --txt:#eef2fb; --muted:#94a3c4; --accent:#2f6bff; --accent2:#5b8cff; --accentB:#ff5b6e;
+    --good:#34d399; --warn:#fbbf24; --radius:16px;
+    --shadow:0 10px 40px rgba(0,0,0,.45);
+    --glow:0 0 0 1px rgba(80,130,255,.12),0 8px 30px rgba(30,70,200,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  h1,h2,h3,.stat .n,.rangeval,.logo{font-family:'Sora','Segoe UI',system-ui,sans-serif}
+  body{font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;color:var(--txt);line-height:1.5;
+    background:linear-gradient(180deg,#070c1c 0%,#060a16 100%);min-height:100vh}
+  /* arka plan görseli (yalnızca başlangıç ekranında belirgin) */
+  body::before{content:'';position:fixed;inset:0;z-index:-2;background:#060a16 url('arkaplan.png') center/cover no-repeat}
+  body::after{content:'';position:fixed;inset:0;z-index:-1;transition:background .8s ease;
+    background:radial-gradient(1100px 620px at 50% -8%, rgba(28,59,133,.45) 0%, rgba(8,14,32,0) 60%),linear-gradient(180deg,rgba(6,10,22,.35),rgba(6,10,22,.62))}
+  /* analiz başlayınca arka planı biraz soluklaştır (yine de görünür kalsın) */
+  body.analyzed::after{background:radial-gradient(1100px 620px at 50% -8%, rgba(28,59,133,.32) 0%, rgba(8,14,32,0) 60%),linear-gradient(180deg,rgba(6,10,22,.5),rgba(6,10,22,.72))}
+  header{padding:18px 26px;background:rgba(8,14,32,.55);backdrop-filter:blur(14px);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:1000}
+  header .logo{width:48px;height:48px;border-radius:13px;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(90,150,255,.25),0 6px 22px rgba(47,107,255,.35)}
+  header .logo img{width:100%;height:100%;object-fit:cover;display:block}
+  header h1{font-size:30px;font-weight:800;letter-spacing:.4px;background:linear-gradient(180deg,#fff,#bcd2ff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  header .credit{margin-left:auto;text-align:right;font-size:16px;font-weight:700;color:#e8eefc;line-height:1.4}
+  header .credit span{font-size:11.5px;font-weight:400;color:var(--muted)}
+  @media(max-width:680px){header h1{font-size:22px}header .credit{font-size:13px}}
+  .wrap{max-width:1500px;margin:0 auto;padding:22px}
+  .grid-top{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{background:linear-gradient(160deg,rgba(30,44,82,.45),rgba(12,20,42,.5));border:1px solid var(--border);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);backdrop-filter:blur(10px)}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .drop{border:1.5px dashed rgba(120,150,220,.3);border-radius:14px;padding:26px 16px;text-align:center;cursor:pointer;transition:.2s;background:rgba(255,255,255,.03)}
+  .drop:hover,.drop.drag{border-color:var(--accent);background:rgba(47,107,255,.1);box-shadow:0 0 0 1px rgba(47,107,255,.3),0 8px 30px rgba(47,107,255,.15)}
+  .drop .ic{font-size:30px;margin-bottom:8px}
+  .drop .fn{font-size:13px;color:var(--muted);word-break:break-all}
+  .drop.loaded{border-color:var(--good);border-style:solid;background:rgba(52,211,153,.07)}
+  .dotA{color:var(--accent2)} .dotB{color:var(--accentB)}
+  .badge{display:inline-block;font-size:11px;padding:3px 11px;border-radius:20px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:var(--muted);margin-left:6px}
+  .badge.ok{background:rgba(52,211,153,.15);border-color:rgba(52,211,153,.3);color:var(--good)}
+  #uploadScreen{min-height:calc(100vh - 86px);display:flex;flex-direction:column;justify-content:center;gap:20px}
+  #uploadScreen .grid-top{align-items:stretch}
+  .runcard{text-align:center;max-width:440px;width:100%;margin:0 auto;padding:18px}
+  .dupwarn{display:none;margin-top:12px;font-size:12.5px;color:#ffd2d6;background:rgba(255,91,110,.12);border:1px solid rgba(255,91,110,.4);padding:10px 13px;border-radius:10px;line-height:1.45}
+  button.primary{display:inline-flex;align-items:center;justify-content:center;gap:9px;margin:4px auto 0;padding:13px 40px;
+    border:1.5px solid rgba(160,195,255,.55);border-radius:14px;
+    background:linear-gradient(180deg,#5b95ff 0%,#2f6bff 52%,#1f54e6 100%);
+    color:#fff;font-size:15px;font-weight:600;letter-spacing:.3px;cursor:pointer;transition:.18s;
+    box-shadow:0 10px 26px rgba(47,107,255,.4),inset 0 1px 0 rgba(255,255,255,.4),inset 0 -2px 6px rgba(10,30,90,.4)}
+  button.primary:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 14px 34px rgba(47,107,255,.55),inset 0 1px 0 rgba(255,255,255,.45)}
+  button.primary:active:not(:disabled){transform:translateY(0)}
+  button.primary svg{opacity:.95}
+  button.primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:inset 0 1px 0 rgba(255,255,255,.15);background:linear-gradient(180deg,#34406a,#27314f);border-color:rgba(160,195,255,.22)}
+  .progress{height:6px;background:rgba(255,255,255,.06);border-radius:5px;overflow:hidden;margin-top:14px;display:none}
+  .progress .bar{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:.2s;box-shadow:0 0 12px rgba(47,107,255,.6)}
+  .progtxt{font-size:12px;color:var(--muted);margin-top:7px;text-align:center;min-height:16px}
+
+  .controls{display:none;margin-top:18px}
+  .ctl-head{display:flex;align-items:center;gap:13px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+  .ctl-ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;background:linear-gradient(180deg,rgba(47,107,255,.25),rgba(30,70,180,.15));border:1px solid rgba(120,160,255,.3)}
+  .ctl-title{font-family:'Sora',sans-serif;font-size:17px;font-weight:700;letter-spacing:.2px}
+  .ctl-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .ctl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;align-items:stretch}
+  .field{background:linear-gradient(180deg,rgba(20,32,62,.5),rgba(12,20,42,.4));border:1px solid var(--border);border-radius:13px;padding:13px 14px;display:flex;flex-direction:column;justify-content:center;transition:.18s}
+  .field:hover{border-color:rgba(120,160,255,.32)}
+  .field.btnfield{background:none;border:none;padding:0;justify-content:flex-end}
+  .field label{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:9px;font-weight:600}
+  .field select,.field input[type=range]{width:100%}
+  .field select{width:100%;padding:11px 38px 11px 13px;color:var(--txt);font-size:14px;font-weight:500;cursor:pointer;
+    -webkit-appearance:none;appearance:none;border:1px solid rgba(150,180,255,.28);border-radius:11px;
+    background-color:rgba(14,24,48,.85);
+    background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3c4' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 13px center;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);transition:.18s}
+  .field select:hover{border-color:rgba(150,180,255,.5)}
+  .field select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,107,255,.22)}
+  .field select option{background:#0e1830;color:var(--txt)}
+  .rangeval{font-size:13px;font-weight:700;color:var(--accent2);min-width:70px;text-align:center;background:rgba(47,107,255,.14);border:1px solid rgba(91,140,255,.3);padding:5px 8px;border-radius:8px}
+  .toolbtn.export{width:100%;padding:12px 16px;border-radius:13px;font-weight:600;background:linear-gradient(180deg,rgba(47,107,255,.22),rgba(30,70,180,.16));border-color:rgba(91,140,255,.4)}
+  .rangerow{display:flex;align-items:center;gap:10px}
+  input[type=range]{-webkit-appearance:none;height:6px;border-radius:5px;background:rgba(255,255,255,.08);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;border:3px solid #0a1020;box-shadow:0 0 10px rgba(47,107,255,.7)}
+
+  .stats{display:none;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:18px}
+  .stat{background:linear-gradient(160deg,rgba(30,44,82,.5),rgba(12,20,42,.5));border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:var(--shadow)}
+  .stat .n{font-size:26px;font-weight:700}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:3px}
+  .stat.green .n{color:var(--good)} .stat.blue .n{color:var(--accent2)} .stat.red .n{color:var(--accentB)} .stat.amber .n{color:var(--warn)}
+
+  .main{display:none;grid-template-columns:1fr;gap:18px;margin-top:18px}
+  #map{height:560px;border-radius:var(--radius);border:1px solid var(--border);z-index:1;box-shadow:var(--shadow)}
+  .leaflet-popup-content-wrapper{background:#0e1830;color:#eef2fb;border-radius:12px;border:1px solid var(--border)}
+  .leaflet-popup-tip{background:#0e1830}
+  .leaflet-popup-content{font-size:13px;line-height:1.55}
+
+  .tablewrap{max-height:520px;overflow:auto;border-radius:12px;border:1px solid var(--border)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{position:sticky;top:0;background:#0b1428;color:var(--muted);text-align:left;padding:11px 12px;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border)}
+  td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05)}
+  tr:hover td{background:rgba(47,107,255,.1);cursor:pointer}
+  tr.sel td{background:rgba(47,107,255,.22)}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}
+  .pill.near{background:rgba(52,211,153,.16);color:var(--good)}
+  .pill.mid{background:rgba(251,191,36,.16);color:var(--warn)}
+  .secthead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px}
+  .secthead.clps{cursor:pointer;user-select:none}
+  .secthead.clps:hover h2{color:var(--accent2)}
+  .chv{display:inline-block;font-size:11px;color:var(--muted)}
+  .secthead h2{margin:0}
+  .legend{display:flex;gap:16px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:5px;vertical-align:middle}
+  .muted{color:var(--muted)} .small{font-size:12px}
+  .toolbtn{padding:9px 16px;border:1px solid rgba(150,180,255,.3);color:var(--txt);border-radius:11px;font-size:13px;font-weight:500;cursor:pointer;transition:.18s;
+    background:linear-gradient(180deg,rgba(40,58,100,.5),rgba(18,28,54,.5));box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+  .toolbtn:hover{border-color:var(--accent);background:linear-gradient(180deg,rgba(47,107,255,.25),rgba(30,70,180,.2));box-shadow:0 6px 18px rgba(47,107,255,.25),inset 0 1px 0 rgba(255,255,255,.12)}
+  .notice{font-size:12px;color:var(--muted);background:rgba(47,107,255,.06);border:1px solid var(--border);border-left:3px solid var(--accent);padding:11px 14px;border-radius:10px;margin-top:14px}
+  @media(max-width:900px){.grid-top{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><img src="ikon.png" alt="HTS" /></div>
+  <h1>HTS Analizi</h1>
+  <div class="credit">Öğr. Gör. Dr. Muhammed Sefa GÖR<br><span>tarafından geliştirilmiştir.</span></div>
+</header>
+
+<div class="wrap">
+  <!-- UPLOAD -->
+  <div id="uploadScreen">
+  <div class="grid-top">
+    <div class="card">
+      <h2><span class="dotA">●</span> <span id="titleA">1. Dosya (Şahıs A)</span></h2>
+      <div class="drop" id="dropA">
+        <div class="ic">📄</div>
+        <div class="fn" id="fnA">PDF sürükleyin veya seçmek için tıklayın</div>
+      </div>
+      <input type="file" id="fileA" accept="application/pdf" hidden>
+      <div id="metaA" class="small muted" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <h2><span class="dotB">●</span> <span id="titleB">2. Dosya (Şahıs B)</span></h2>
+      <div class="drop" id="dropB">
+        <div class="ic">📄</div>
+        <div class="fn" id="fnB">PDF sürükleyin veya seçmek için tıklayın</div>
+      </div>
+      <input type="file" id="fileB" accept="application/pdf" hidden>
+      <div id="metaB" class="small muted" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="card runcard">
+    <button class="primary" id="run" disabled>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+      <span id="runLabel">İki PDF'i de yükleyin</span>
+    </button>
+    <div class="progress" id="prog"><div class="bar" id="bar"></div></div>
+    <div class="progtxt" id="progtxt"></div>
+    <div id="dupWarn" class="dupwarn">⚠️ Her iki tarafa da <b>aynı dosya</b> yüklendi. Lütfen Şahıs A ve Şahıs B için <b>farklı</b> HTS dosyaları seçin.</div>
+  </div>
+  </div><!-- /uploadScreen -->
+
+  <!-- CONTROLS -->
+  <div class="card controls" id="controls">
+    <div class="ctl-head">
+      <div class="ctl-ic">⚙️</div>
+      <div><div class="ctl-title">Analiz Parametreleri</div><div class="ctl-sub">Kaynak tabloyu, zaman penceresini ve yakınlık eşiğini ayarlayın</div></div>
+    </div>
+    <div class="ctl-grid">
+      <div class="field">
+        <label>Tablo (kaynak)</label>
+        <select id="tableSel">
+          <option value="gsm" selected>GSM Görüşme</option>
+          <option value="gprs">İnternet (GPRS)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Zaman penceresi (± saat)</label>
+        <select id="win">
+          <option value="1">± 1 saat</option>
+          <option value="2">± 2 saat</option>
+          <option value="3" selected>± 3 saat</option>
+          <option value="4">± 4 saat</option>
+          <option value="5">± 5 saat</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Yakınlık eşiği (mesafe)</label>
+        <div class="rangerow">
+          <input type="range" id="dist" min="1" max="100" step="1" value="15">
+          <span class="rangeval" id="distval">15 km</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Başlangıç tarihi</label>
+        <select id="dateStart"><option value="">En baştan</option></select>
+      </div>
+      <div class="field">
+        <label>Bitiş tarihi</label>
+        <select id="dateEnd"><option value="">En sona</option></select>
+      </div>
+      <div class="field btnfield">
+        <button class="toolbtn export" id="exportBtn">⬇ Eşleşmeleri CSV indir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats" id="stats"></div>
+
+  <!-- MAP + TABLE -->
+  <div class="main" id="main">
+    <div class="card">
+      <div class="secthead">
+        <h2>🗺️ Konum Haritası</h2>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div class="legend">
+            <span><i style="background:#3b82f6;border:2px solid #000"></i><span id="legA">Şahıs A</span></span>
+            <span><i style="background:#ef4444;border:2px solid #000"></i><span id="legB">Şahıs B</span></span>
+            <span><i style="background:linear-gradient(90deg,#e11,#1d4,#22f);border:1px solid #000"></i>Buluşma (her gün farklı renk)</span>
+          </div>
+          <button class="toolbtn" id="onlyMatch">🎯 Sadece buluşmaları göster</button>
+        </div>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <div class="card">
+      <div class="secthead" id="matchHead" style="cursor:pointer;user-select:none">
+        <h2><span id="matchChevron">►</span> 🎯 Tespit Edilen Buluşmalar <span class="badge" id="matchCount">0</span></h2>
+        <span class="small muted">Başlığa tıkla: aç/kapat · satıra tıkla: haritada göster</span>
+      </div>
+      <div class="tablewrap" id="matchWrap" style="display:none">
+        <table id="matchTable">
+          <thead><tr>
+            <th>Tarih</th><th id="thA">A Saati</th><th id="thB">B Saati</th><th>Δ Süre</th>
+            <th>Mesafe</th><th id="thAk">A Konumu</th><th id="thBk">B Konumu</th><th id="thAn">A No</th><th id="thBn">B No</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ŞEHİR / SEYAHAT ANALİZİ -->
+    <div class="grid-top">
+      <div class="card">
+        <div class="secthead clps" onclick="toggleC('cityWrapA','chvCA')"><h2><span id="chvCA" class="chv">►</span> 🏙️ <span id="cityTitleA">A</span> — Bulunduğu İller</h2></div>
+        <div id="cityWrapA" class="tablewrap" style="max-height:300px;display:none">
+          <table><thead><tr><th>İl</th><th>İlk Tarih</th><th>Son Tarih</th><th>Kayıt</th></tr></thead>
+          <tbody id="cityA"></tbody></table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="secthead clps" onclick="toggleC('cityWrapB','chvCB')"><h2><span id="chvCB" class="chv">►</span> 🏙️ <span id="cityTitleB">B</span> — Bulunduğu İller</h2></div>
+        <div id="cityWrapB" class="tablewrap" style="max-height:300px;display:none">
+          <table><thead><tr><th>İl</th><th>İlk Tarih</th><th>Son Tarih</th><th>Kayıt</th></tr></thead>
+          <tbody id="cityB"></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="secthead clps" onclick="toggleC('travelWrap','chvTR')">
+        <h2><span id="chvTR" class="chv">►</span> ✈️ Seyahat / Farklı İl Çapraz Analizi <span class="badge" id="travelCount">0</span></h2>
+        <span class="small muted">Biri ana ilinin dışındayken diğerinin aynı gün nerede olduğu</span>
+      </div>
+      <div id="travelWrap" style="display:none">
+        <div class="tablewrap" style="max-height:420px">
+          <table id="travelTable">
+            <thead><tr>
+              <th>Tarih</th><th id="thTa">A İl(ler)i</th><th id="thTb">B İl(ler)i</th><th>Durum</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="notice" id="travelNote"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* ====================== PARSING CORE (Node'da doğrulandı) ====================== */
+const REC=/^(\d+)\s+(\d{6,})\s+(Aradı|Arandı|Mesaj aldı|Mesaj attı|Mesaj Aldı|Yönlendirme)\s+(\S+)\s+(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}:\d{2}:\d{2})\s+(\d+)\s*sn/;
+// GPRS satırı: "SIRA NUM Gprs TARİH SAAT SÜRE sn. ..." (Diğer Numara sütunu yok)
+const REC_GPRS=/^(\d+)\s+(\d{6,})\s+(Gprs|GPRS)\s+(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}:\d{2}:\d{2})\s+(\d+)\s*sn/;
+const CLOSE=/(\d{12,})\s*-\s*opr:\s*([A-Za-z0-9()]*)\s*-?\s*(.*)$/;
+const PAIR=/(3[5-9]\.\d{6,}|4[0-2]\.\d{6,})\s*-\s*(\d{2}\.\d{6,})/;
+const SORG=/Sorgulanan No\s*:\s*([\d ]+)/;
+// Abone Bilgileri ilk satırı: "1 <numara> <DURUM(A/S)> AD SOYAD <adres>..."
+const ABONE=/^\d+\s+\d{6,}\s+[A-ZÇĞİÖŞÜ]\s+([A-ZÇĞİÖŞÜ][A-ZÇĞİÖŞÜa-zçğıöşü.'-]*\s+[A-ZÇĞİÖŞÜ][A-ZÇĞİÖŞÜa-zçğıöşü.'-]*)/;
+
+/* 81 il yaklaşık merkez koordinatı — koordinattan il tespiti için */
+const IL={Adana:[37.00,35.32],Adıyaman:[37.76,38.28],Afyonkarahisar:[38.76,30.54],Ağrı:[39.72,43.05],Amasya:[40.65,35.83],Ankara:[39.92,32.85],Antalya:[36.90,30.70],Artvin:[41.18,41.82],Aydın:[37.84,27.84],Balıkesir:[39.65,27.88],Bilecik:[40.14,29.98],Bingöl:[38.88,40.50],Bitlis:[38.40,42.11],Bolu:[40.74,31.61],Burdur:[37.72,30.29],Bursa:[40.19,29.06],Çanakkale:[40.15,26.41],Çankırı:[40.60,33.62],Çorum:[40.55,34.95],Denizli:[37.78,29.09],Diyarbakır:[37.91,40.24],Edirne:[41.68,26.56],Elazığ:[38.68,39.22],Erzincan:[39.75,39.49],Erzurum:[39.90,41.27],Eskişehir:[39.78,30.52],Gaziantep:[37.07,37.38],Giresun:[40.91,38.39],Gümüşhane:[40.46,39.48],Hakkari:[37.57,43.74],Hatay:[36.40,36.34],Isparta:[37.76,30.55],Mersin:[36.81,34.64],İstanbul:[41.01,28.96],İzmir:[38.42,27.14],Kars:[40.60,43.10],Kastamonu:[41.39,33.78],Kayseri:[38.73,35.49],Kırklareli:[41.74,27.22],Kırşehir:[39.15,34.16],Kocaeli:[40.77,29.94],Konya:[37.87,32.48],Kütahya:[39.42,29.98],Malatya:[38.36,38.31],Manisa:[38.61,27.43],Kahramanmaraş:[37.58,36.93],Mardin:[37.31,40.74],Muğla:[37.22,28.36],Muş:[38.74,41.49],Nevşehir:[38.62,34.71],Niğde:[37.97,34.68],Ordu:[40.98,37.88],Rize:[41.02,40.52],Sakarya:[40.78,30.40],Samsun:[41.29,36.33],Siirt:[37.93,41.94],Sinop:[42.03,35.15],Sivas:[39.75,37.02],Tekirdağ:[40.98,27.51],Tokat:[40.31,36.55],Trabzon:[41.00,39.72],Tunceli:[39.11,39.55],Şanlıurfa:[37.17,38.79],Uşak:[38.68,29.41],Van:[38.49,43.41],Yozgat:[39.82,34.81],Zonguldak:[41.45,31.79],Aksaray:[38.37,34.03],Bayburt:[40.26,40.23],Karaman:[37.18,33.22],Kırıkkale:[39.85,33.52],Batman:[37.88,41.13],Şırnak:[37.52,42.46],Bartın:[41.64,32.34],Ardahan:[41.11,42.70],Iğdır:[39.92,44.04],Yalova:[40.65,29.27],Karabük:[41.20,32.63],Kilis:[36.72,37.12],Osmaniye:[37.07,36.25],Düzce:[40.84,31.16]};
+function nearestIl(la,lo){let best=null,bd=1e9;for(const k in IL){const a=IL[k][0],o=IL[k][1],d=(a-la)*(a-la)+(o-lo)*(o-lo);if(d<bd){bd=d;best=k;}}return best;}
+// Türkçe karakterleri sadeleştir, büyük harfe çevir
+function norm(s){return (s||'').replace(/İ/g,'I').replace(/ı/g,'I').replace(/Ş/g,'S').replace(/ş/g,'S').replace(/Ğ/g,'G').replace(/ğ/g,'G').replace(/Ü/g,'U').replace(/ü/g,'U').replace(/Ö/g,'O').replace(/ö/g,'O').replace(/Ç/g,'C').replace(/ç/g,'C').toUpperCase();}
+const ILUP={}; for(const k in IL){ ILUP[norm(k)]=k; }
+// metinden il (province) bul — tam kelime eşleşmesi
+const ILRE=new RegExp('\\b('+Object.keys(ILUP).sort((a,b)=>b.length-a.length).join('|')+')\\b');
+function ilFromText(t){const m=norm(t).match(ILRE);return m?ILUP[m[1]]:null;}
+// metinden il anahtarı (tam il adı verilmişse)
+function ilKey(t){return ILUP[norm(t).trim()]||ilFromText(t);}
+// "ilçe / il , il" deseni (ilçe = / öncesi son kelime)
+const ILILCE=/([A-ZÇĞİÖŞÜ][A-ZÇĞİÖŞÜ.\s]{1,30}?)\s*\/\s*([A-ZÇĞİÖŞÜ]{3,})\s*,\s*([A-ZÇĞİÖŞÜ]{3,})/;
+
+function linesFromPoints(points){
+  const pts=points.filter(p=>p.str&&p.str.trim());
+  pts.sort((a,b)=> a.y-b.y || a.x-b.x);
+  const lines=[]; let cur=null;
+  for(const p of pts){
+    if(cur && Math.abs(p.y-cur.y)<=3){ cur.items.push(p); cur.y=(cur.y*cur.items.length+p.y)/(cur.items.length+1); }
+    else { cur={y:p.y,items:[p]}; lines.push(cur); }
+  }
+  return lines.map(l=> l.items.sort((a,b)=>a.x-b.x).map(p=>p.str).join(' '));
+}
+
+function parseHTS(pages){
+  let sorg=null, aboneName=null, section=null; const recs=[]; let cur=null;
+  const flush=()=>{ if(cur){ recs.push(cur); cur=null; } };
+  for(const pg of pages){
+    for(const ln of pg.lines){
+      if(sorg===null){ const m=ln.match(SORG); if(m) sorg=m[1].replace(/\s/g,''); }
+      if(aboneName===null){ const ma=ln.match(ABONE); if(ma) aboneName=ma[1].replace(/\s+/g,' ').trim(); }
+      // tablo bölümü başlıkları
+      if(/GSM GÖRÜŞME SORGU SONUÇLARI/.test(ln)) section='gsm';
+      else if(/GPRS|İNTERNET BAĞLANTI/.test(ln)) section='gprs';
+      else if(/MESAJ BİLGİLERİ|SABİT TELEFON|ULUSLARARASI GÖRÜŞME/.test(ln)) section='other';
+      const mr=ln.match(REC);
+      if(mr){ flush();
+        cur={sira:mr[1],num:mr[2],tip:mr[3],other:mr[4],date:`${mr[7]}-${mr[6]}-${mr[5]}`,time:mr[8],dur:mr[9],block:ln,table:(section==='gprs'?'other':(section||'gsm'))};
+        continue;
+      }
+      const mg=ln.match(REC_GPRS);
+      if(mg){ flush();
+        cur={sira:mg[1],num:mg[2],tip:'Gprs',other:'',date:`${mg[6]}-${mg[5]}-${mg[4]}`,time:mg[7],dur:mg[8],block:ln,table:'gprs'};
+        continue;
+      }
+      if(cur) cur.block+=' '+ln;   // kaydın devam satırlarını (adres dahil) topla
+    }
+  }
+  flush();
+  for(const r of recs){
+    const b=r.block.replace(/-\n/g,'- ');
+    // Format A: GPS koordinat çifti
+    const m=b.match(PAIR);
+    if(m){ r.lat=parseFloat(m[1]); r.lon=parseFloat(m[2]); } else { r.lat=null; r.lon=null; }
+    // baz kimliği (referans)
+    const bz=b.match(CLOSE); if(bz){ r.baz=bz[1]; r.opr=bz[2]; }
+    // Format B: adresten ilçe / il
+    const mi=b.match(ILILCE);
+    if(mi){ r.ilce=mi[1].trim().split(/\s+/).pop(); r.ilText=ilKey(mi[3]); }
+    if(!r.ilText){ const il=ilFromText(b); if(il) r.ilFallback=il; }
+  }
+  // Format A: baz->koordinat sözlüğü (çoğunluk oyu) ile karışık satırları tamamla
+  const votes=new Map();
+  for(const r of recs){
+    if(r.baz&&r.lat!=null&&r.lon>=25.5&&r.lon<=45.5){
+      const k=r.baz, key=r.lat.toFixed(5)+','+r.lon.toFixed(5);
+      if(!votes.has(k)) votes.set(k,new Map());
+      const v=votes.get(k); v.set(key,(v.get(key)||0)+1);
+    }
+  }
+  const dict=new Map();
+  for(const [b,v] of votes){ let best=null,bc=-1; for(const [key,c] of v){ if(c>bc){bc=c;best=key;} }
+    const p=best.split(','); dict.set(b,[parseFloat(p[0]),parseFloat(p[1])]); }
+  for(const r of recs){ if(r.lat==null&&r.baz&&dict.has(r.baz)){ const d=dict.get(r.baz); r.lat=d[0]; r.lon=d[1]; } }
+  // GPS olanlara koordinattan il; konum kaynağı işaretle
+  for(const r of recs){
+    if(r.lat!=null){ r.il=nearestIl(r.lat,r.lon); r.locSrc='gps'; }
+    else if(r.ilce&&r.ilText){ r.il=r.ilText; r.locSrc='ilce'; }
+    else if(r.ilFallback){ r.il=r.ilFallback; r.locSrc='il'; }
+  }
+  return {sorgulanan:sorg, name:aboneName, records:recs, towers:dict};
+}
+
+async function parsePdf(file, onProg){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+  const pages=[];
+  for(let i=1;i<=pdf.numPages;i++){
+    const page=await pdf.getPage(i);
+    const vp=page.getViewport({scale:1, rotation:page.rotate||0});
+    const tc=await page.getTextContent();
+    const pts=tc.items.map(it=>{
+      const t=pdfjsLib.Util.transform(vp.transform, it.transform);
+      return {x:t[4], y:t[5], str:it.str};
+    });
+    pages.push({lines:linesFromPoints(pts)});
+    if(i%5===0||i===pdf.numPages) onProg(i,pdf.numPages);
+    if(i%20===0) await new Promise(r=>setTimeout(r,0));
+  }
+  return parseHTS(pages);
+}
+
+/* ====================== GEOCODING (ilçe -> koordinat, format B) ====================== */
+let geoCache={};
+try{ geoCache=JSON.parse(localStorage.getItem('htsGeoCache')||'{}'); }catch(e){ geoCache={}; }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function geocodeOne(q){
+  try{
+    const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=tr&q='+encodeURIComponent(q+', Türkiye');
+    const res=await fetch(url,{headers:{'Accept-Language':'tr'}});
+    const j=await res.json();
+    if(j&&j[0]) return [parseFloat(j[0].lat),parseFloat(j[0].lon)];
+  }catch(e){}
+  return null;
+}
+// İki veri kümesindeki benzersiz ilçeleri geocode et (önbellekli, yavaşlatmalı)
+async function geocodeAll(datasets,onProg){
+  const need=new Set();
+  datasets.forEach(d=>d.records.forEach(r=>{
+    if(r.lat==null&&r.ilce&&r.ilText){ const key=r.ilce+', '+r.ilText; if(!(key in geoCache)) need.add(key); }
+  }));
+  const arr=[...need]; let i=0, added=0;
+  for(const key of arr){
+    i++; onProg&&onProg(i,arr.length,key);
+    const c=await geocodeOne(key);
+    if(c){ geoCache[key]=c; added++; }   // başarısızsa önbelleğe yazma -> sonraki açılışta tekrar dener
+    await sleep(900); // Nominatim kullanım sınırı (1 istek/sn)
+  }
+  if(added) try{ localStorage.setItem('htsGeoCache',JSON.stringify(geoCache)); }catch(e){}
+}
+// Koordinatları ata: GPS varsa dokunma; ilçe varsa geocode; yoksa il merkezi
+function assignCoords(d){
+  d.records.forEach(r=>{
+    if(r.lat!=null) return;
+    if(r.locSrc==='ilce'){
+      const c=geoCache[r.ilce+', '+r.ilText];
+      if(c){ r.lat=c[0]; r.lon=c[1]; }
+      else if(IL[r.ilText]){ r.lat=IL[r.ilText][0]; r.lon=IL[r.ilText][1]; r.locSrc='il'; }
+    } else if(r.locSrc==='il'&&IL[r.il]){ r.lat=IL[r.il][0]; r.lon=IL[r.il][1]; }
+  });
+}
+
+/* ====================== STATE & HELPERS ====================== */
+let dataA=null, dataB=null, matches=[], map=null, layerA, layerB, layerMatch, layerLines;
+let dayColors={}, onlyMatchMode=false, activeTable='gsm';
+// aktif tabloya (GSM/GPRS) ait kayıtlar
+const recsOf=d=>d.records.filter(r=>r.table===activeTable);
+const NA=()=>dataA&&dataA.name?dataA.name:'Şahıs A';
+const NB=()=>dataB&&dataB.name?dataB.name:'Şahıs B';
+// A: dışı siyah / içi mavi · B: dışı siyah / içi kırmızı
+const ICON=(fill)=>L.divIcon({className:'',html:`<div style="width:14px;height:14px;border-radius:50%;background:${fill};border:2.5px solid #000;box-shadow:0 0 4px rgba(0,0,0,.6)"></div>`,iconSize:[14,14],iconAnchor:[7,7]});
+// Farklı günler için farklı renk paleti
+function buildDayColors(){
+  const dates=[...new Set(matches.map(m=>m.date))].sort();
+  dayColors={};
+  const n=Math.max(dates.length,1);
+  dates.forEach((d,i)=>{ dayColors[d]=`hsl(${Math.round(i*360/n)},75%,50%)`; });
+}
+
+function haversine(la1,lo1,la2,lo2){
+  const R=6371,toR=x=>x*Math.PI/180;
+  const dLa=toR(la2-la1),dLo=toR(lo2-lo1);
+  const a=Math.sin(dLa/2)**2+Math.cos(toR(la1))*Math.cos(toR(la2))*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+const toSec=t=>{const[h,m,s]=t.split(':').map(Number);return h*3600+m*60+s;};
+const fmtDur=sec=>{const m=Math.round(sec/60);if(m<60)return m+' dk';const h=Math.floor(m/60);return h+'s '+(m%60)+'dk';};
+const fmtDate=d=>{const[y,m,da]=d.split('-');return `${da}.${m}.${y}`;};
+
+/* ====================== UPLOAD WIRING ====================== */
+function wireDrop(side){
+  const drop=document.getElementById('drop'+side), inp=document.getElementById('file'+side);
+  drop.onclick=()=>inp.click();
+  drop.ondragover=e=>{e.preventDefault();drop.classList.add('drag');};
+  drop.ondragleave=()=>drop.classList.remove('drag');
+  drop.ondrop=e=>{e.preventDefault();drop.classList.remove('drag');if(e.dataTransfer.files[0])setFile(side,e.dataTransfer.files[0]);};
+  inp.onchange=()=>{if(inp.files[0])setFile(side,inp.files[0]);};
+}
+const files={A:null,B:null};
+function setFile(side,f){
+  if(f.type!=='application/pdf'){alert('Lütfen PDF dosyası seçin');return;}
+  files[side]=f;
+  const drop=document.getElementById('drop'+side);
+  drop.classList.add('loaded');
+  document.getElementById('fn'+side).textContent=f.name;
+  drop.querySelector('.ic').textContent='✅';
+  checkReady();
+}
+// iki tarafa aynı dosya mı yüklendi?
+function isSameFile(a,b){ return a&&b&&a.name===b.name&&a.size===b.size; }
+function checkReady(){
+  const run=document.getElementById('run'), warn=document.getElementById('dupWarn');
+  const dup=isSameFile(files.A,files.B);
+  warn.style.display=dup?'block':'none';
+  if(files.A&&files.B&&!dup){ run.disabled=false; document.getElementById('runLabel').textContent='Analizi Başlat'; }
+  else if(dup){ run.disabled=true; document.getElementById('runLabel').textContent='Aynı dosya — farklı dosya yükleyin'; }
+  else { run.disabled=true; document.getElementById('runLabel').textContent='İki PDF\'i de yükleyin'; }
+}
+wireDrop('A'); wireDrop('B');
+
+/* ====================== RUN ====================== */
+document.getElementById('run').onclick=async()=>{
+  const run=document.getElementById('run'); run.disabled=true;
+  const prog=document.getElementById('prog'), bar=document.getElementById('bar'), ptxt=document.getElementById('progtxt');
+  prog.style.display='block';
+  try{
+    ptxt.textContent='Şahıs A dosyası işleniyor...';
+    dataA=await parsePdf(files.A,(i,n)=>{bar.style.width=(i/n*50)+'%';ptxt.textContent=`A: ${i}/${n} sayfa`;});
+    ptxt.textContent='Şahıs B dosyası işleniyor...';
+    dataB=await parsePdf(files.B,(i,n)=>{bar.style.width=(50+i/n*50)+'%';ptxt.textContent=`B: ${i}/${n} sayfa`;});
+    // Format B: adres bazlı kayıtlar için ilçe koordinatlarını çöz
+    const needGeo=[dataA,dataB].some(d=>d.records.some(r=>r.lat==null&&r.ilce&&r.ilText));
+    if(needGeo){
+      ptxt.textContent='İlçe konumları çözümleniyor (harita servisi)...';
+      await geocodeAll([dataA,dataB],(i,n,key)=>{bar.style.width='100%';ptxt.textContent=`İlçe konumu: ${i}/${n} — ${key}`;});
+    }
+    assignCoords(dataA); assignCoords(dataB);
+    bar.style.width='100%'; ptxt.textContent='Tamamlandı ✓';
+    document.getElementById('metaA').innerHTML=metaLine(dataA,'A');
+    document.getElementById('metaB').innerHTML=metaLine(dataB,'B');
+    applyNames();
+    buildDateFilter();
+    // Önce panelleri görünür yap, SONRA haritayı kur (Leaflet gizli konteynerde nokta çizmez)
+    document.getElementById('controls').style.display='block';
+    document.getElementById('stats').style.display='grid';
+    document.getElementById('main').style.display='grid';
+    document.body.classList.add('analyzed');   // arka planı soluklaştır
+    initMap();
+    map.invalidateSize();
+    recompute();
+    setTimeout(()=>{ map.invalidateSize(); },300);
+    // analiz bitince Analiz Parametreleri başa gelecek şekilde kaydır
+    setTimeout(()=>{ document.getElementById('controls').scrollIntoView({behavior:'smooth',block:'start'}); },400);
+    setTimeout(()=>{prog.style.display='none';ptxt.textContent='';},1200);
+  }catch(e){ ptxt.textContent='Hata: '+e.message; console.error(e); }
+  run.disabled=false;
+};
+function metaLine(d,side){
+  const gsm=d.records.filter(r=>r.table==='gsm').length;
+  const gprs=d.records.filter(r=>r.table==='gprs').length;
+  const geo=d.records.filter(r=>r.lat!=null).length;
+  return `<b class="dot${side}" style="font-size:15px">${d.name||('Şahıs '+side)}</b><br>Sorgulanan No: <b>${d.sorgulanan||'—'}</b><br>GSM: <b>${gsm}</b> · GPRS: <b>${gprs}</b> kayıt · <span style="color:var(--good)">${geo} konumlu</span>`;
+}
+
+/* ====================== DATE FILTER ====================== */
+function buildDateFilter(){
+  const dates=new Set();
+  [...recsOf(dataA),...recsOf(dataB)].forEach(r=>r.lat!=null&&dates.add(r.date));
+  const sorted=[...dates].sort();
+  const opts=sorted.map(d=>`<option value="${d}">${fmtDate(d)}</option>`).join('');
+  document.getElementById('dateStart').innerHTML='<option value="">En baştan</option>'+opts;
+  document.getElementById('dateEnd').innerHTML='<option value="">En sona</option>'+opts;
+}
+// ISO 'YYYY-MM-DD' olduğu için string karşılaştırması tarih sırasını korur
+function dateInRange(d){
+  const s=document.getElementById('dateStart').value, e=document.getElementById('dateEnd').value;
+  if(s && d<s) return false;
+  if(e && d>e) return false;
+  return true;
+}
+
+/* ====================== MATCHING ====================== */
+const secToTime=s=>{s=Math.round(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return [h,m,x].map(v=>String(v).padStart(2,'0')).join(':');};
+// kayıtları (tarih + konum) bazında kümele; aynı yerdeki tekrarları birleştir
+function clusters(list){
+  const m=new Map();
+  list.forEach(r=>{
+    const k=r.date+'|'+r.lat.toFixed(4)+'|'+r.lon.toFixed(4);
+    let o=m.get(k); if(!o){ o={date:r.date,lat:r.lat,lon:r.lon,rec:r,times:[]}; m.set(k,o); }
+    o.times.push(toSec(r.time));
+  });
+  m.forEach(o=>o.times.sort((a,b)=>a-b));
+  return [...m.values()];
+}
+// iki sıralı zaman dizisi arasındaki en küçük farkı bul (iki işaretçi)
+function minGap(a,b){
+  let i=0,j=0,best=Infinity,ba=null,bb=null;
+  while(i<a.length&&j<b.length){
+    const d=Math.abs(a[i]-b[j]); if(d<best){best=d;ba=a[i];bb=b[j];}
+    if(a[i]<b[j])i++; else j++;
+  }
+  return {gap:best,ta:ba,tb:bb};
+}
+function computeMatches(winH,distKm){
+  const out=[]; const winS=winH*3600;
+  const A=clusters(recsOf(dataA).filter(r=>r.lat!=null&&dateInRange(r.date)));
+  const B=clusters(recsOf(dataB).filter(r=>r.lat!=null&&dateInRange(r.date)));
+  const byDate={}; B.forEach(b=>{(byDate[b.date]=byDate[b.date]||[]).push(b);});
+  for(const a of A){
+    const bl=byDate[a.date]; if(!bl)continue;
+    for(const b of bl){
+      const dist=haversine(a.lat,a.lon,b.lat,b.lon); if(dist>distKm)continue;
+      const g=minGap(a.times,b.times); if(g.gap>winS)continue;
+      out.push({date:a.date,dt:g.gap,dist,
+        a:Object.assign({},a.rec,{time:secToTime(g.ta)}),
+        b:Object.assign({},b.rec,{time:secToTime(g.tb)})});
+    }
+  }
+  out.sort((x,y)=> x.date.localeCompare(y.date)|| x.dist-y.dist || x.dt-y.dt);
+  return out;
+}
+
+/* ====================== MAP ====================== */
+function initMap(){
+  if(map) return;
+  map=L.map('map',{preferCanvas:true}).setView([37.05,37.4],9);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  layerA=L.layerGroup().addTo(map); layerB=L.layerGroup().addTo(map);
+  layerLines=L.layerGroup().addTo(map); layerMatch=L.layerGroup().addTo(map);
+}
+function drawMap(){
+  [layerA,layerB,layerLines,layerMatch].forEach(l=>l.clearLayers());
+  const uniq=(recs,fill,layer,side)=>{
+    const seen=new Map();
+    recs.filter(r=>r.lat!=null&&dateInRange(r.date)).forEach(r=>{
+      const k=r.lat.toFixed(5)+','+r.lon.toFixed(5);
+      if(!seen.has(k))seen.set(k,{r,n:0,times:[]});
+      const o=seen.get(k); o.n++; o.times.push(r.date+' '+r.time);
+    });
+    const nm=side==='A'?NA():NB(), lab=side==='A'?'#3b82f6':'#ef4444';
+    seen.forEach(o=>{
+      L.marker([o.r.lat,o.r.lon],{icon:ICON(fill)}).addTo(layer)
+       .bindPopup(`<b style="color:${lab}">${nm}</b> · ${dataMap(side).sorgulanan}<br>${locLabel(o.r)}<br>${o.n} kayıt<br><span class="muted">${o.r.lat.toFixed(5)}, ${o.r.lon.toFixed(5)}</span>`);
+    });
+  };
+  // A: içi mavi, B: içi kırmızı (ikisi de dışı siyah) — sadece-buluşma modunda gizli
+  if(!onlyMatchMode){
+    uniq(recsOf(dataA),'#3b82f6',layerA,'A');
+    uniq(recsOf(dataB),'#ef4444',layerB,'B');
+  }
+  // meeting points — her gün farklı renk
+  buildDayColors();
+  const allpts=[];
+  matches.forEach((m,i)=>{
+    const col=dayColors[m.date]||'#22c55e';
+    const mid=[(m.a.lat+m.b.lat)/2,(m.a.lon+m.b.lon)/2];
+    L.polyline([[m.a.lat,m.a.lon],[m.b.lat,m.b.lon]],{color:col,weight:1.8,opacity:.6,dashArray:'4,4'}).addTo(layerLines);
+    L.circleMarker(mid,{radius:8,color:'#000',fillColor:col,fillOpacity:.9,weight:1.5})
+     .addTo(layerMatch).bindPopup(matchPopup(m));
+    allpts.push([m.a.lat,m.a.lon],[m.b.lat,m.b.lon]);
+  });
+  if(allpts.length){ map.fitBounds(L.latLngBounds(allpts).pad(0.3)); }
+  else {
+    const ap=recsOf(dataA).filter(r=>r.lat!=null&&dateInRange(r.date)).map(r=>[r.lat,r.lon])
+      .concat(recsOf(dataB).filter(r=>r.lat!=null&&dateInRange(r.date)).map(r=>[r.lat,r.lon]));
+    if(ap.length) map.fitBounds(L.latLngBounds(ap).pad(0.2));
+  }
+  setTimeout(()=>map.invalidateSize(),50);
+}
+function dataMap(side){return side==='A'?dataA:dataB;}
+// konum kaynağı etiketi
+function locLabel(r){
+  if(r.locSrc==='gps') return `<b>${r.il||''}</b> · kesin GPS`;
+  if(r.locSrc==='ilce') return `<b>${r.ilce||''} / ${r.il||''}</b> · ilçe bazlı (yaklaşık)`;
+  return `<b>${r.il||''}</b> · il bazlı (yaklaşık)`;
+}
+function matchPopup(m){
+  const col=dayColors[m.date]||'#22c55e';
+  return `<b style="color:${col}">🎯 Buluşma — ${fmtDate(m.date)}</b><br>
+    <span class="dotA">●</span> ${NA()} · ${m.a.time} · ${locLabel(m.a)}<br>
+    <span class="dotB">●</span> ${NB()} · ${m.b.time} · ${locLabel(m.b)}<br>
+    Mesafe: <b>${m.dist<1?Math.round(m.dist*1000)+' m':m.dist.toFixed(2)+' km'}</b> · Δ ${fmtDur(m.dt)}`;
+}
+
+/* ====================== TABLE & STATS ====================== */
+function drawTable(){
+  const tb=document.querySelector('#matchTable tbody'); tb.innerHTML='';
+  const CAP=1500;
+  matches.slice(0,CAP).forEach((m,i)=>{
+    const near=m.dist<=1, mid=m.dist<=5;
+    const distTxt=m.dist<1?Math.round(m.dist*1000)+' m':m.dist.toFixed(2)+' km';
+    const pill=near?'near':(mid?'mid':'mid');
+    const tr=document.createElement('tr'); tr.dataset.i=i;
+    tr.innerHTML=`<td>${fmtDate(m.date)}</td><td>${m.a.time}</td><td>${m.b.time}</td>
+      <td>${fmtDur(m.dt)}</td><td><span class="pill ${pill}">${distTxt}</span></td>
+      <td class="small"><b>${m.a.il||''}</b> ${m.a.ilce?'/'+m.a.ilce:''}</td>
+      <td class="small"><b>${m.b.il||''}</b> ${m.b.ilce?'/'+m.b.ilce:''}</td>
+      <td class="small dotA">${m.a.num}</td><td class="small dotB">${m.b.num}</td>`;
+    tr.onclick=()=>{ document.querySelectorAll('#matchTable tr').forEach(x=>x.classList.remove('sel'));
+      tr.classList.add('sel'); focusMatch(i); };
+    tb.appendChild(tr);
+  });
+  if(matches.length>CAP){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td colspan="9" class="muted" style="text-align:center">… ${matches.length} olaydan ilk ${CAP} gösteriliyor (mesafe/zaman önceliğine göre). Daralt: yakınlık eşiğini veya tarih aralığını kullan.</td>`;
+    tb.appendChild(tr);
+  }
+  document.getElementById('matchCount').textContent=matches.length;
+}
+function focusMatch(i){
+  const m=matches[i]; const mid=[(m.a.lat+m.b.lat)/2,(m.a.lon+m.b.lon)/2];
+  map.setView(mid,13,{animate:true});
+  let found=null; layerMatch.eachLayer((l,idx)=>{});
+  const layers=layerMatch.getLayers(); if(layers[i]) layers[i].openPopup();
+}
+function drawStats(){
+  const geoA=recsOf(dataA).filter(r=>r.lat!=null&&dateInRange(r.date)).length;
+  const geoB=recsOf(dataB).filter(r=>r.lat!=null&&dateInRange(r.date)).length;
+  const days=new Set(matches.map(m=>m.date)).size;
+  const minD=matches.length?Math.min(...matches.map(m=>m.dist)):0;
+  const s=document.getElementById('stats');
+  s.innerHTML=`
+    <div class="stat green"><div class="n">${matches.length}</div><div class="l">Buluşma eşleşmesi</div></div>
+    <div class="stat amber"><div class="n">${days}</div><div class="l">Ortak gün</div></div>
+    <div class="stat green"><div class="n">${matches.length?(minD<1?Math.round(minD*1000)+' m':minD.toFixed(1)+' km'):'—'}</div><div class="l">En yakın temas</div></div>
+    <div class="stat blue"><div class="n">${geoA}</div><div class="l">${NA()} konumlu kayıt</div></div>
+    <div class="stat red"><div class="n">${geoB}</div><div class="l">${NB()} konumlu kayıt</div></div>`;
+}
+
+/* ====================== ŞEHİR / SEYAHAT ANALİZİ ====================== */
+function cityStats(d){
+  const m={};
+  recsOf(d).filter(r=>r.lat!=null&&dateInRange(r.date)).forEach(r=>{(m[r.il]=m[r.il]||[]).push(r.date);});
+  return Object.entries(m).map(([il,ds])=>{ds.sort();return{il,first:ds[0],last:ds[ds.length-1],n:ds.length};}).sort((a,b)=>b.n-a.n);
+}
+function primaryIl(d){const c=cityStats(d);return c.length?c[0].il:null;}
+function dayCityMap(d){const m={};recsOf(d).filter(r=>r.lat!=null&&dateInRange(r.date)).forEach(r=>{(m[r.date]=m[r.date]||new Set()).add(r.il);});return m;}
+function drawCity(){
+  const ca=cityStats(dataA), cb=cityStats(dataB);
+  const fill=(id,arr)=>{document.getElementById(id).innerHTML=arr.length?arr.map(c=>
+    `<tr><td><b>${c.il}</b></td><td>${fmtDate(c.first)}</td><td>${fmtDate(c.last)}</td><td>${c.n}</td></tr>`).join('')
+    :'<tr><td colspan="4" class="muted">Konumlu kayıt yok</td></tr>';};
+  fill('cityA',ca); fill('cityB',cb);
+  const pa=primaryIl(dataA), pb=primaryIl(dataB);
+  const da=dayCityMap(dataA), db=dayCityMap(dataB);
+  const dates=[...new Set([...Object.keys(da),...Object.keys(db)])].sort();
+  const rows=[];
+  dates.forEach(d=>{
+    const aset=da[d]?[...da[d]]:[], bset=db[d]?[...db[d]]:[];
+    const aTravel=aset.some(x=>x!==pa)&&aset.length, bTravel=bset.some(x=>x!==pb)&&bset.length;
+    if(!aTravel&&!bTravel) return;
+    const durum=[]; if(aTravel)durum.push(NA()+' farklı ilde'); if(bTravel)durum.push(NB()+' farklı ilde');
+    rows.push({d,aset,bset,durum:durum.join(' · '),both:aset.length&&bset.length});
+  });
+  const tb=document.querySelector('#travelTable tbody');
+  tb.innerHTML=rows.length?rows.map(r=>`<tr>
+    <td>${fmtDate(r.d)}</td>
+    <td class="dotA">${r.aset.join(', ')||'<span class="muted">kayıt yok</span>'}</td>
+    <td class="dotB">${r.bset.join(', ')||'<span class="muted">kayıt yok</span>'}</td>
+    <td><span class="pill ${r.both?'near':'mid'}">${r.durum}</span></td></tr>`).join('')
+    :'<tr><td colspan="4" class="muted">Seçili aralıkta farklı il (seyahat) tespit edilmedi</td></tr>';
+  document.getElementById('travelCount').textContent=rows.length;
+  document.getElementById('travelNote').innerHTML=`<b>${NA()}</b> ana ili: <b>${pa||'—'}</b> · <b>${NB()}</b> ana ili: <b>${pb||'—'}</b>. Tablo, taraflardan en az biri ana ilinin dışındayken her iki tarafın o gün bulunduğu illeri gösterir. "kayıt yok" = o tarafın o güne ait konumlu kaydı bulunmuyor.`;
+}
+
+/* ====================== İSİMLERİ UYGULA ====================== */
+function applyNames(){
+  const set=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t;};
+  set('titleA',NA()); set('titleB',NB());
+  set('legA',NA()); set('legB',NB());
+  set('cityTitleA',NA()); set('cityTitleB',NB());
+  set('thA',NA()+' Saati'); set('thB',NB()+' Saati');
+  set('thAk',NA()+' Konumu'); set('thBk',NB()+' Konumu');
+  set('thAn',NA()+' No'); set('thBn',NB()+' No');
+  set('thTa',NA()+' İl(ler)i'); set('thTb',NB()+' İl(ler)i');
+}
+
+/* ====================== RECOMPUTE ====================== */
+function recompute(){
+  const winH=+document.getElementById('win').value;
+  const distKm=+document.getElementById('dist').value;
+  matches=computeMatches(winH,distKm);
+  drawStats(); drawTable(); drawMap(); drawCity();
+}
+document.getElementById('win').onchange=recompute;
+document.getElementById('dateStart').onchange=recompute;
+document.getElementById('dateEnd').onchange=recompute;
+document.getElementById('tableSel').onchange=function(){
+  activeTable=this.value;
+  buildDateFilter();           // tabloya göre tarihler değişir
+  recompute();
+};
+// genel aç/kapa (şehir & seyahat tabloları)
+function toggleC(wrapId,chvId){
+  const w=document.getElementById(wrapId), c=document.getElementById(chvId);
+  const hidden=w.style.display==='none';
+  w.style.display=hidden?'':'none';
+  if(c)c.textContent=hidden?'▼':'►';
+}
+document.getElementById('matchHead').onclick=function(){
+  const w=document.getElementById('matchWrap'), ch=document.getElementById('matchChevron');
+  const hidden=w.style.display==='none';
+  w.style.display=hidden?'':'none';
+  ch.textContent=hidden?'▼':'►';
+};
+document.getElementById('onlyMatch').onclick=function(){
+  onlyMatchMode=!onlyMatchMode;
+  this.classList.toggle('active',onlyMatchMode);
+  this.style.background=onlyMatchMode?'var(--accent)':'';
+  this.style.color=onlyMatchMode?'#fff':'';
+  this.textContent=onlyMatchMode?'👥 Tüm konumları göster':'🎯 Sadece buluşmaları göster';
+  drawMap();
+};
+document.getElementById('dist').oninput=function(){
+  document.getElementById('distval').textContent=Math.round(+this.value)+' km';
+};
+document.getElementById('dist').onchange=recompute;
+
+/* ====================== EXPORT ====================== */
+document.getElementById('exportBtn').onclick=()=>{
+  if(!matches.length){alert('Eşleşme yok');return;}
+  const rows=[['Tarih',NA()+'_Saat',NB()+'_Saat','Delta','Mesafe_km',NA()+'_No',NB()+'_No',NA()+'_Il',NB()+'_Il',NA()+'_Konum',NB()+'_Konum','A_Lat','A_Lon','B_Lat','B_Lon']];
+  matches.forEach(m=>rows.push([fmtDate(m.date),m.a.time,m.b.time,fmtDur(m.dt),m.dist.toFixed(3),
+    m.a.num,m.b.num,m.a.il||'',m.b.il||'',(m.a.ilce||'').replace(/,/g,' '),(m.b.ilce||'').replace(/,/g,' '),
+    m.a.lat,m.a.lon,m.b.lat,m.b.lon]));
+  const csv='﻿'+rows.map(r=>r.join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='HTS_buluşmalar.csv'; a.click();
+};
+</script>
+</body>
+</html>
